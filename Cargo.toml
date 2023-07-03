@@ -9,5 +9,9 @@ edition = "2021"
 rss = { version = "2.0", features = ["with-serde", "atom"] }
 reqwest = { version = "0.11", features = ["blocking"] }
 atom_syndication = "0.12"
-tui = "0.19"
+ratatui = "0.21"
 crossterm = "0.26"
+html2md = "0.2"
+termimad = "0.23"
+ansi-to-tui = "3"
+html2text = "0.5"

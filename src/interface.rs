@@ -1,15 +1,16 @@
+use ansi_to_tui::IntoText;
 use crossterm::event::{self, Event, KeyCode};
-use std::{
-    io,
-    time::{Duration, Instant},
-};
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::Span,
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
+};
+use std::{
+    io,
+    time::{Duration, Instant},
 };
 
 use crate::rss::{example_feed, Article, Website};
@@ -105,13 +106,27 @@ impl App {
         self.articles = StatefulList::new();
     }
 
-    fn scroll_up(&mut self) {
-        self.scroll += 1;
+    fn scroll_down(&mut self, width: u16, length: u16) {
+        if let Some(index) = self.articles.state.selected() {
+            let content_length = (self.articles.items[index].content.chars().count()
+                / Into::<usize>::into(width))
+                //+ Into::<usize>::into(length)
+                + self.articles.items[index].content.lines().count();
+            if Into::<usize>::into(self.scroll) <= content_length {
+                self.scroll += 1;
+            } else {
+                self.scroll += 0;
+            }
+        } else {
+            self.scroll += 1;
+        }
     }
 
-    fn scroll_down(&mut self) {
-        if self.scroll != 0 {
+    fn scroll_up(&mut self) {
+        if self.scroll > 0 {
             self.scroll -= 1;
+        } else {
+            self.reset_scroll();
         }
     }
 
@@ -168,6 +183,10 @@ pub(crate) fn run_app<B: Backend>(
                                             terminal.draw(|f| {
                                                 read_ui(f, &app, &app.articles.items[article])
                                             })?;
+                                            // get the width here so we can compute how far the user
+                                            // can scroll to based off their terminal size since we wrap the text
+                                            let width = terminal.get_frame().size().width + 20;
+                                            let length = terminal.get_frame().size().bottom() + 20;
 
                                             let timeout = tick_rate
                                                 .checked_sub(last_tick.elapsed())
@@ -176,7 +195,9 @@ pub(crate) fn run_app<B: Backend>(
                                                 if let Event::Key(key) = event::read()? {
                                                     match key.code {
                                                         KeyCode::Up => app.scroll_up(),
-                                                        KeyCode::Down => app.scroll_down(),
+                                                        KeyCode::Down => {
+                                                            app.scroll_down(width, length)
+                                                        }
                                                         KeyCode::Char('q') => {
                                                             app.reset_scroll();
                                                             break 'read;
@@ -209,7 +230,7 @@ pub(crate) fn run_app<B: Backend>(
 fn read_ui<B: Backend>(f: &mut Frame<B>, app: &App, article: &Article) {
     let size = f.size();
 
-    let block = Block::default().style(Style::default().bg(Color::Black).fg(Color::Black));
+    let block = Block::default();
     f.render_widget(block, size);
 
     let chunks = Layout::default()
@@ -218,23 +239,22 @@ fn read_ui<B: Backend>(f: &mut Frame<B>, app: &App, article: &Article) {
         .constraints([Constraint::Percentage(100), Constraint::Percentage(100)].as_ref())
         .split(size);
 
-    let text = vec![Spans::from(article.content.clone())];
+    let raw_html = article.content.clone();
+    let parsed_to_markdown = html2md::parse_html(&raw_html);
+    let markdown_to_terminal = termimad::inline(&parsed_to_markdown).to_string();
+    let ansi_to_tui = markdown_to_terminal.into_text().unwrap();
 
     let create_block = |title| {
-        Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().bg(Color::Black).fg(Color::White))
-            .title(Span::styled(
-                title,
-                Style::default().add_modifier(Modifier::BOLD),
-            ))
+        Block::default().borders(Borders::ALL).title(Span::styled(
+            title,
+            Style::default().add_modifier(Modifier::BOLD),
+        ))
     };
-    let paragraph = Paragraph::new(text.clone())
-        .style(Style::default().bg(Color::Black).fg(Color::White))
+    let paragraph = Paragraph::new(ansi_to_tui)
         .block(create_block(article.title.clone()))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false })
-        .scroll((0, app.scroll));
+        .scroll((app.scroll, 0));
 
     f.render_widget(paragraph, chunks[0]);
 }
