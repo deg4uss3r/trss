@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod input;
 mod interface;
 mod rss;
 

@@ -15,6 +15,7 @@ use std::{
 
 use crate::{
     config::Config,
+    input,
     rss::{example_feed, Article, Website},
 };
 
@@ -42,7 +43,7 @@ impl<T> StatefulList<T> {
     fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
-                if i >= self.items.len() - 1 || self.items.len() == 0 {
+                if i == self.items.len() - 1 {
                     0
                 } else {
                     i + 1
@@ -168,7 +169,16 @@ pub(crate) fn run_app<B: Backend>(
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                    KeyCode::Char('a') => {
+                        let sites = input::main().unwrap();
+                        for site in sites {
+                            crate::config::update_or_store(site.clone()).unwrap();
+                        }
+                    }
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        app.websites.unselect();
+                        return Ok(());
+                    }
                     KeyCode::Left => {
                         app.clear_articles();
                         app.websites.unselect()
@@ -178,8 +188,8 @@ pub(crate) fn run_app<B: Backend>(
                         app.load_articles()
                     }
                     KeyCode::Up => {
-                        app.load_articles();
-                        app.websites.previous()
+                        app.websites.previous();
+                        app.load_articles()
                     }
                     KeyCode::Char('h') => 'help_loop: loop {
                         terminal.draw(|f| help_ui(f))?;
