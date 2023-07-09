@@ -15,3 +15,6 @@ html2md = "0.2"
 termimad = "0.23"
 ansi-to-tui = "3"
 html2text = "0.5"
+confy = "0.5.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

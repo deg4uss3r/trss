@@ -13,7 +13,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::rss::{example_feed, Article, Website};
+use crate::{
+    config::Config,
+    rss::{example_feed, Article, Website},
+};
 
 struct StatefulList<T> {
     state: ListState,
@@ -83,11 +86,17 @@ pub(crate) struct App {
 }
 
 impl App {
-    pub fn new() -> App {
-        let websites = vec![
+    pub fn new(config: Config) -> App {
+        let mut websites = vec![
             example_feed("https://everythingchanges.us/feed.xml").unwrap(),
             example_feed("https://charity.wtf/feed/").unwrap(),
         ];
+
+        //TODO load websites from config insead
+        config
+            .subscriptions
+            .iter()
+            .for_each(|site| websites.push(example_feed(site).unwrap()));
 
         App {
             websites: StatefulList::with_items(websites),
@@ -108,10 +117,16 @@ impl App {
 
     fn scroll_down(&mut self, width: u16, length: u16) {
         if let Some(index) = self.articles.state.selected() {
-            let content_length = (self.articles.items[index].content.chars().count()
-                / Into::<usize>::into(width))
-                //+ Into::<usize>::into(length)
-                + self.articles.items[index].content.lines().count();
+            // move this elsewhere you are doing it twice (here and in read UI)
+            let raw_html = self.articles.items[index].content.clone();
+            let parsed_to_markdown = html2md::parse_html(&raw_html);
+            let markdown_to_terminal = termimad::inline(&parsed_to_markdown).to_string();
+
+            let content_length_md = markdown_to_terminal.chars().count();
+            let line_count_md = markdown_to_terminal.lines().count();
+
+            let content_length =
+                (content_length_md / Into::<usize>::into(width)) + line_count_md - 50;
             if Into::<usize>::into(self.scroll) <= content_length {
                 self.scroll += 1;
             } else {
@@ -166,6 +181,20 @@ pub(crate) fn run_app<B: Backend>(
                         app.load_articles();
                         app.websites.previous()
                     }
+                    KeyCode::Char('h') => 'help_loop: loop {
+                        terminal.draw(|f| help_ui(f))?;
+
+                        if crossterm::event::poll(timeout)? {
+                            if let Event::Key(key) = event::read()? {
+                                match key.code {
+                                    KeyCode::Char('q') | KeyCode::Esc => {
+                                        break 'help_loop;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    },
                     KeyCode::Right | KeyCode::Enter => 'article_select: loop {
                         terminal.draw(|f| ui(f, &mut app))?;
                         if let Event::Key(key) = event::read()? {
@@ -177,6 +206,20 @@ pub(crate) fn run_app<B: Backend>(
                                     app.articles.unselect();
                                     break 'article_select;
                                 }
+                                KeyCode::Char('h') => 'help_loop: loop {
+                                    terminal.draw(|f| help_ui(f))?;
+
+                                    if crossterm::event::poll(timeout)? {
+                                        if let Event::Key(key) = event::read()? {
+                                            match key.code {
+                                                KeyCode::Char('q') | KeyCode::Esc => {
+                                                    break 'help_loop;
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                },
                                 KeyCode::Right | KeyCode::Enter => {
                                     if let Some(article) = app.articles.state.selected() {
                                         'read: loop {
@@ -185,8 +228,8 @@ pub(crate) fn run_app<B: Backend>(
                                             })?;
                                             // get the width here so we can compute how far the user
                                             // can scroll to based off their terminal size since we wrap the text
-                                            let width = terminal.get_frame().size().width + 20;
-                                            let length = terminal.get_frame().size().bottom() + 20;
+                                            let width = terminal.get_frame().size().width;
+                                            let length = terminal.get_frame().size().bottom();
 
                                             let timeout = tick_rate
                                                 .checked_sub(last_tick.elapsed())
@@ -198,10 +241,27 @@ pub(crate) fn run_app<B: Backend>(
                                                         KeyCode::Down => {
                                                             app.scroll_down(width, length)
                                                         }
-                                                        KeyCode::Char('q') => {
+                                                        KeyCode::Esc | KeyCode::Char('q') => {
                                                             app.reset_scroll();
                                                             break 'read;
                                                         }
+                                                        KeyCode::Char('h') => 'help_loop: loop {
+                                                            terminal.draw(|f| help_ui(f))?;
+
+                                                            if crossterm::event::poll(timeout)? {
+                                                                if let Event::Key(key) =
+                                                                    event::read()?
+                                                                {
+                                                                    match key.code {
+                                                                        KeyCode::Char('q')
+                                                                        | KeyCode::Esc => {
+                                                                            break 'help_loop;
+                                                                        }
+                                                                        _ => {}
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
                                                         _ => {}
                                                     }
                                                 }
@@ -255,6 +315,33 @@ fn read_ui<B: Backend>(f: &mut Frame<B>, app: &App, article: &Article) {
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false })
         .scroll((app.scroll, 0));
+
+    f.render_widget(paragraph, chunks[0]);
+}
+
+fn help_ui<B: Backend>(f: &mut Frame<B>) {
+    let size = f.size();
+
+    let block = Block::default();
+    f.render_widget(block, size);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(5)
+        .constraints([Constraint::Percentage(100), Constraint::Percentage(100)].as_ref())
+        .split(size);
+
+    let create_block = |title| {
+        Block::default().borders(Borders::ALL).title(Span::styled(
+            title,
+            Style::default().add_modifier(Modifier::BOLD),
+        ))
+    };
+
+    let paragraph = Paragraph::new("hello".into_text().unwrap())
+        .block(create_block("Key Shortcuts <Press Esc to close>"))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, chunks[0]);
 }

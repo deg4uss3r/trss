@@ -1,5 +1,8 @@
+mod config;
+mod error;
 mod interface;
 mod rss;
+
 use crate::interface::{run_app, App};
 use std::{error::Error, io, time::Duration};
 
@@ -19,7 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let app = App::new();
+    let config = config::load()?;
+    let app = App::new(config);
     let res = run_app(&mut terminal, app, tick_rate);
 
     // restore terminal
