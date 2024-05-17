@@ -320,7 +320,7 @@ fn read_ui<B: Backend>(f: &mut Frame<B>, app: &App, article: &Article) {
             Style::default().add_modifier(Modifier::BOLD),
         ))
     };
-    let paragraph = Paragraph::new(ansi_to_tui)
+    let paragraph = Paragraph::new(ansi_to_tui.to_string())
         .block(create_block(article.title.clone()))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false })
@@ -348,7 +348,7 @@ fn help_ui<B: Backend>(f: &mut Frame<B>) {
         ))
     };
 
-    let paragraph = Paragraph::new("hello".into_text().unwrap())
+    let paragraph = Paragraph::new("hello".to_string())
         .block(create_block("Key Shortcuts <Press Esc to close>"))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false });

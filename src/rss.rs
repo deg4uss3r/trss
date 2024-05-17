@@ -1,4 +1,5 @@
 use atom_syndication::Feed;
+use chrono::{FixedOffset, TimeZone};
 use rss::Channel;
 use std::{cmp::Ordering, error::Error};
 
@@ -95,7 +96,16 @@ pub(crate) fn example_feed<'a>(url: &str) -> Result<Website, Box<dyn Error>> {
                 .map(|item| Article {
                     title: item.title().value.clone(),
                     subtitle: Some(item.summary().cloned().unwrap_or_default().value),
-                    updated_at: item.published().unwrap().to_string(),
+                    updated_at: item
+                        .published()
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            FixedOffset::east_opt(0)
+                                .unwrap()
+                                .with_ymd_and_hms(1960, 1, 1, 0, 0, 0)
+                                .unwrap()
+                        })
+                        .to_string(),
                     content: item
                         .content()
                         .cloned()
