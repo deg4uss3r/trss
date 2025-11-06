@@ -6,17 +6,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4"
+jiff = "0.2"
 rss = { version = "2.0", features = ["with-serde", "atom"] }
-reqwest = { version = "0.11", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking"] }
 atom_syndication = "0.12"
-ratatui = "0.21"
-crossterm = "0.26"
+ratatui = "0.29"
+crossterm = "0.29"
 html2md = "0.2"
-termimad = "0.23"
-ansi-to-tui = "3"
-html2text = "0.5"
-confy = "0.5.1"
+termimad = "0.34"
+ansi-to-tui = "7.0.0"
+html2text = "0.12"
+confy = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-unicode-width = "0.1"
+unicode-width = "0.2"

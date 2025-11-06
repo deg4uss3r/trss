@@ -16,7 +16,7 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Position},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph},
@@ -109,7 +109,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<V
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -121,7 +121,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
             ]
             .as_ref(),
         )
-        .split(f.size());
+        .split(f.area());
 
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
@@ -145,9 +145,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
             Style::default(),
         ),
     };
-    let mut text = Text::from(Line::from(msg));
-    text.patch_style(style);
-    let help_message = Paragraph::new(text);
+    let text = Text::from(Line::from(msg));
+    let styled_text = text.patch_style(style);
+    let help_message = Paragraph::new(styled_text);
     f.render_widget(help_message, chunks[0]);
 
     let input = Paragraph::new(app.input.clone())
@@ -164,12 +164,10 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
         InputMode::Editing => {
             // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor(
-                // Put cursor past the end of the input text
-                chunks[1].x + app.input.width() as u16 + 1,
-                // Move one line down, from the border to the input line
-                chunks[1].y + 1,
-            )
+            // For x, put cursor past the end of the input text
+            // For y, move one line down, from the border to the input line
+            let p = Position::new(chunks[1].x + app.input.width() as u16 + 1, chunks[1].y + 1);
+            f.set_cursor_position(p)
         }
     }
 

@@ -9,6 +9,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::{
+    collections::HashSet,
     io,
     time::{Duration, Instant},
 };
@@ -88,19 +89,18 @@ pub(crate) struct App {
 
 impl App {
     pub fn new(config: Config) -> App {
-        let mut websites = vec![
+        let mut websites = HashSet::from([
             example_feed("https://everythingchanges.us/feed.xml").unwrap(),
             example_feed("https://charity.wtf/feed/").unwrap(),
-        ];
+        ]);
 
-        //TODO load websites from config insead
-        config
-            .subscriptions
-            .iter()
-            .for_each(|site| websites.push(example_feed(site).unwrap()));
+        //TODO load websites from config instead
+        config.subscriptions.iter().for_each(|site| {
+            websites.insert(example_feed(site).unwrap());
+        });
 
         App {
-            websites: StatefulList::with_items(websites),
+            websites: StatefulList::with_items(websites.into_iter().collect::<Vec<_>>()),
             articles: StatefulList::new(),
             scroll: 0,
         }
@@ -126,9 +126,9 @@ impl App {
             let content_length_md = markdown_to_terminal.chars().count();
             let line_count_md = markdown_to_terminal.lines().count();
 
-            let content_length =
-                (content_length_md / Into::<usize>::into(width)) + line_count_md - 50;
-            if Into::<usize>::into(self.scroll) <= content_length {
+            // try to find a healthy balance between the lines and scroll
+            let content_length = (content_length_md / Into::<usize>::into(width)) + line_count_md;
+            if Into::<usize>::into(self.scroll) < content_length {
                 self.scroll += 1;
             } else {
                 self.scroll += 0;
@@ -205,85 +205,102 @@ pub(crate) fn run_app<B: Backend>(
                             }
                         }
                     },
-                    KeyCode::Right | KeyCode::Enter => 'article_select: loop {
-                        terminal.draw(|f| ui(f, &mut app))?;
-                        if let Event::Key(key) = event::read()? {
-                            match key.code {
-                                KeyCode::Left => app.articles.unselect(),
-                                KeyCode::Down => app.articles.next(),
-                                KeyCode::Up => app.articles.previous(),
-                                KeyCode::Char('q') | KeyCode::Esc => {
-                                    app.articles.unselect();
-                                    break 'article_select;
-                                }
-                                KeyCode::Char('h') => 'help_loop: loop {
-                                    terminal.draw(|f| help_ui(f))?;
+                    KeyCode::Right | KeyCode::Enter => {
+                        app.articles.next();
+                        'article_select: loop {
+                            terminal.draw(|f| ui(f, &mut app))?;
+                            if let Event::Key(key) = event::read()? {
+                                match key.code {
+                                    KeyCode::Left => {
+                                        app.articles.unselect();
+                                        break 'article_select;
+                                    }
+                                    KeyCode::Down => app.articles.next(),
+                                    KeyCode::Up => app.articles.previous(),
+                                    KeyCode::Char('q') | KeyCode::Esc => {
+                                        app.articles.unselect();
+                                        break 'article_select;
+                                    }
+                                    KeyCode::Char('h') => 'help_loop: loop {
+                                        terminal.draw(|f| help_ui(f))?;
 
-                                    if crossterm::event::poll(timeout)? {
-                                        if let Event::Key(key) = event::read()? {
-                                            match key.code {
-                                                KeyCode::Char('q') | KeyCode::Esc => {
-                                                    break 'help_loop;
+                                        if crossterm::event::poll(timeout)? {
+                                            if let Event::Key(key) = event::read()? {
+                                                match key.code {
+                                                    KeyCode::Char('q') | KeyCode::Esc => {
+                                                        break 'help_loop;
+                                                    }
+                                                    _ => {}
                                                 }
-                                                _ => {}
                                             }
                                         }
-                                    }
-                                },
-                                KeyCode::Right | KeyCode::Enter => {
-                                    if let Some(article) = app.articles.state.selected() {
-                                        'read: loop {
-                                            terminal.draw(|f| {
-                                                read_ui(f, &app, &app.articles.items[article])
-                                            })?;
-                                            // get the width here so we can compute how far the user
-                                            // can scroll to based off their terminal size since we wrap the text
-                                            let width = terminal.get_frame().size().width;
-                                            let length = terminal.get_frame().size().bottom();
+                                    },
+                                    KeyCode::Right | KeyCode::Enter => {
+                                        if let Some(article) = app.articles.state.selected() {
+                                            'read: loop {
+                                                terminal.draw(|f| {
+                                                    read_ui::<B>(
+                                                        f,
+                                                        &app,
+                                                        &app.articles.items[article],
+                                                    )
+                                                })?;
+                                                // get the width here so we can compute how far the user
+                                                // can scroll to based off their terminal size since we wrap the text
+                                                let width = terminal.get_frame().area().width;
+                                                let length = terminal.get_frame().area().bottom();
 
-                                            let timeout = tick_rate
-                                                .checked_sub(last_tick.elapsed())
-                                                .unwrap_or_else(|| Duration::from_secs(0));
-                                            if crossterm::event::poll(timeout)? {
-                                                if let Event::Key(key) = event::read()? {
-                                                    match key.code {
-                                                        KeyCode::Up => app.scroll_up(),
-                                                        KeyCode::Down => {
-                                                            app.scroll_down(width, length)
-                                                        }
-                                                        KeyCode::Esc | KeyCode::Char('q') => {
-                                                            app.reset_scroll();
-                                                            break 'read;
-                                                        }
-                                                        KeyCode::Char('h') => 'help_loop: loop {
-                                                            terminal.draw(|f| help_ui(f))?;
+                                                let timeout = tick_rate
+                                                    .checked_sub(last_tick.elapsed())
+                                                    .unwrap_or_else(|| Duration::from_secs(0));
+                                                if crossterm::event::poll(timeout)? {
+                                                    if let Event::Key(key) = event::read()? {
+                                                        match key.code {
+                                                            KeyCode::Up => app.scroll_up(),
+                                                            KeyCode::Down => {
+                                                                app.scroll_down(width, length)
+                                                            }
+                                                            KeyCode::Esc | KeyCode::Char('q') => {
+                                                                app.reset_scroll();
+                                                                break 'read;
+                                                            }
+                                                            KeyCode::Char('h') => {
+                                                                'help_loop: loop {
+                                                                    terminal
+                                                                        .draw(|f| help_ui(f))?;
 
-                                                            if crossterm::event::poll(timeout)? {
-                                                                if let Event::Key(key) =
-                                                                    event::read()?
-                                                                {
-                                                                    match key.code {
-                                                                        KeyCode::Char('q')
-                                                                        | KeyCode::Esc => {
-                                                                            break 'help_loop;
+                                                                    if crossterm::event::poll(
+                                                                        timeout,
+                                                                    )? {
+                                                                        if let Event::Key(key) =
+                                                                            event::read()?
+                                                                        {
+                                                                            match key.code {
+                                                                                KeyCode::Char(
+                                                                                    'q',
+                                                                                )
+                                                                                | KeyCode::Esc => {
+                                                                                    break 'help_loop;
+                                                                                }
+                                                                                _ => {}
+                                                                            }
                                                                         }
-                                                                        _ => {}
                                                                     }
                                                                 }
                                                             }
-                                                        },
-                                                        _ => {}
+                                                            _ => {}
+                                                        }
                                                     }
                                                 }
                                             }
+                                        } else {
                                         }
-                                    } else {
                                     }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
-                    },
+                    }
                     // all other keys do nothing
                     _ => {}
                 }
@@ -297,17 +314,16 @@ pub(crate) fn run_app<B: Backend>(
     }
 }
 
-fn read_ui<B: Backend>(f: &mut Frame<B>, app: &App, article: &Article) {
-    let size = f.size();
+fn read_ui<B: Backend>(f: &mut Frame, app: &App, article: &Article) {
+    let area = f.area();
 
     let block = Block::default();
-    f.render_widget(block, size);
+    f.render_widget(block, area);
 
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
         .margin(5)
-        .constraints([Constraint::Percentage(100), Constraint::Percentage(100)].as_ref())
-        .split(size);
+        .constraints(Constraint::from_fills([1]))
+        .split(area);
 
     let raw_html = article.content.clone();
     let parsed_to_markdown = html2md::parse_html(&raw_html);
@@ -329,8 +345,8 @@ fn read_ui<B: Backend>(f: &mut Frame<B>, app: &App, article: &Article) {
     f.render_widget(paragraph, chunks[0]);
 }
 
-fn help_ui<B: Backend>(f: &mut Frame<B>) {
-    let size = f.size();
+fn help_ui(f: &mut Frame) {
+    let size = f.area();
 
     let block = Block::default();
     f.render_widget(block, size);
@@ -356,12 +372,12 @@ fn help_ui<B: Backend>(f: &mut Frame<B>) {
     f.render_widget(paragraph, chunks[0]);
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+fn ui(f: &mut Frame, app: &mut App) {
     // Create two chunks with divided horizontal screen space (20/80)
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
-        .split(f.size());
+        .split(f.area());
 
     // Iterate through all elements in the `items` app and append some debug text to it.
     let sites: Vec<ListItem> = app

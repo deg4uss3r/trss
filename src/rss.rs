@@ -1,5 +1,4 @@
 use atom_syndication::Feed;
-use chrono::{FixedOffset, TimeZone};
 use rss::Channel;
 use std::{cmp::Ordering, error::Error};
 
@@ -9,7 +8,7 @@ enum FeedType {
     Atom(Feed),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Website {
     pub name: String,
     pub uri: String,
@@ -30,7 +29,7 @@ impl PartialOrd for Website {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Article {
     pub title: String,
     pub subtitle: Option<String>,
@@ -98,14 +97,8 @@ pub(crate) fn example_feed<'a>(url: &str) -> Result<Website, Box<dyn Error>> {
                     subtitle: Some(item.summary().cloned().unwrap_or_default().value),
                     updated_at: item
                         .published()
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            FixedOffset::east_opt(0)
-                                .unwrap()
-                                .with_ymd_and_hms(1960, 1, 1, 0, 0, 0)
-                                .unwrap()
-                        })
-                        .to_string(),
+                        .map(|time| time.to_rfc3339())
+                        .unwrap_or_else(|| jiff::Timestamp::now().to_string()),
                     content: item
                         .content()
                         .cloned()
