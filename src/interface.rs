@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::{
@@ -354,7 +354,7 @@ fn help_ui(f: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(5)
-        .constraints([Constraint::Percentage(100), Constraint::Percentage(100)].as_ref())
+        .constraints(Constraint::from_fills([1]))
         .split(size);
 
     let create_block = |title| {
@@ -374,9 +374,10 @@ fn help_ui(f: &mut Frame) {
 
 fn ui(f: &mut Frame, app: &mut App) {
     // Create two chunks with divided horizontal screen space (20/80)
+    // for a sidebar displaying websites and a list of articles
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+        .constraints([Constraint::Percentage(20), Constraint::Fill(1)])
         .split(f.area());
 
     // Iterate through all elements in the `items` app and append some debug text to it.
@@ -410,7 +411,7 @@ fn ui(f: &mut Frame, app: &mut App) {
             .iter()
             .map(|article| {
                 ListItem::new(format!(
-                    "{}\n\t\t{}",
+                    "{}\n{}",
                     article.title.clone(),
                     article.updated_at.clone()
                 ))
@@ -426,7 +427,8 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .bg(Color::LightGreen)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(">> ");
+        .highlight_symbol(">> ")
+        .highlight_spacing(HighlightSpacing::Always);
 
     f.render_stateful_widget(entries_list, chunks[1], &mut app.articles.state);
 }
