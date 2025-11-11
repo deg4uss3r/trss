@@ -89,12 +89,8 @@ pub(crate) struct App {
 
 impl App {
     pub fn new(config: Config) -> App {
-        let mut websites = HashSet::from([
-            example_feed("https://everythingchanges.us/feed.xml").unwrap(),
-            example_feed("https://charity.wtf/feed/").unwrap(),
-        ]);
+        let mut websites = HashSet::new();
 
-        //TODO load websites from config instead
         config.subscriptions.iter().for_each(|site| {
             websites.insert(example_feed(site).unwrap());
         });
@@ -116,18 +112,23 @@ impl App {
         self.articles = StatefulList::new();
     }
 
-    fn scroll_down(&mut self, width: u16, length: u16) {
+    fn scroll_down(&mut self, width: u16) {
         if let Some(index) = self.articles.state.selected() {
             // move this elsewhere you are doing it twice (here and in read UI)
             let raw_html = self.articles.items[index].content.clone();
             let parsed_to_markdown = html2md::parse_html(&raw_html);
             let markdown_to_terminal = termimad::inline(&parsed_to_markdown).to_string();
 
-            let content_length_md = markdown_to_terminal.chars().count();
-            let line_count_md = markdown_to_terminal.lines().count();
+            let content_length_md =
+                markdown_to_terminal.chars().count() / (width as f32 * 0.57) as usize;
+            let new_line_count_md = markdown_to_terminal
+                .lines()
+                .filter(|l| *l == "\n" || *l == "" || l.is_empty())
+                .collect::<Vec<&str>>()
+                .len();
 
             // try to find a healthy balance between the lines and scroll
-            let content_length = (content_length_md / Into::<usize>::into(width)) + line_count_md;
+            let content_length = content_length_md + new_line_count_md;
             if Into::<usize>::into(self.scroll) < content_length {
                 self.scroll += 1;
             } else {
@@ -245,10 +246,10 @@ pub(crate) fn run_app<B: Backend>(
                                                         &app.articles.items[article],
                                                     )
                                                 })?;
-                                                // get the width here so we can compute how far the user
-                                                // can scroll to based off their terminal size since we wrap the text
+                                                // Used to determine how far we can scroll
+                                                // scroll down does the content characters by width to get a rough
+                                                // idea of how many lines there will be
                                                 let width = terminal.get_frame().area().width;
-                                                let length = terminal.get_frame().area().bottom();
 
                                                 let timeout = tick_rate
                                                     .checked_sub(last_tick.elapsed())
@@ -257,9 +258,7 @@ pub(crate) fn run_app<B: Backend>(
                                                     if let Event::Key(key) = event::read()? {
                                                         match key.code {
                                                             KeyCode::Up => app.scroll_up(),
-                                                            KeyCode::Down => {
-                                                                app.scroll_down(width, length)
-                                                            }
+                                                            KeyCode::Down => app.scroll_down(width),
                                                             KeyCode::Esc | KeyCode::Char('q') => {
                                                                 app.reset_scroll();
                                                                 break 'read;
@@ -336,10 +335,11 @@ fn read_ui<B: Backend>(f: &mut Frame, app: &App, article: &Article) {
             Style::default().add_modifier(Modifier::BOLD),
         ))
     };
+
     let paragraph = Paragraph::new(ansi_to_tui.to_string())
         .block(create_block(article.title.clone()))
         .alignment(Alignment::Left)
-        .wrap(Wrap { trim: false })
+        .wrap(Wrap { trim: true })
         .scroll((app.scroll, 0));
 
     f.render_widget(paragraph, chunks[0]);
@@ -364,8 +364,8 @@ fn help_ui(f: &mut Frame) {
         ))
     };
 
-    let paragraph = Paragraph::new("hello".to_string())
-        .block(create_block("Key Shortcuts <Press Esc to close>"))
+    let paragraph = Paragraph::new("ENTER - choose website/article\nARROW KEYS - Navigate the UI\nESC - Go back a panel\nQ - Go back a panel\n\n\nNOTE: When the application does not have a website selected hitting ESC or Q will close the application".to_string())
+        .block(create_block("Key Shortcuts"))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false });
 
